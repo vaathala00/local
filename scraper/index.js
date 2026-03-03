@@ -32,29 +32,44 @@ async function fetchUrl(url) {
   const startTime = Date.now();
   try {
     console.log(`\n⏳ LOADING... ${url}`);
-    console.log(`   ⏸️  Script is PAUSED. Waiting up to 2 minutes for this specific link...`);
-
-    // Timeout set to 120,000ms (2 minutes)
+    
+    // Added User-Agent to look like a real browser
     const response = await axios.get(url, {
       timeout: 120000, 
-      responseType: 'json'
+      responseType: 'json',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+      }
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    // === DEBUG LOGS ===
+    console.log(`   📡 HTTP Status Code: ${response.status}`);
+    console.log(`   🧪 First 300 chars of response:`, JSON.stringify(response.data).substring(0, 300));
+    // ==================
     
     if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ [${duration}s] Error: Data is not an array.`);
+      console.warn(`   ⚠️ [${duration}s] Data is NOT an array. It might be an HTML error page.`);
       return [];
     }
 
-    console.log(`   ✅ [${duration}s] LOAD COMPLETE.`);
-    console.log(`   ➡️  Now moving to the next link...`);
+    if (response.data.length === 0) {
+        console.warn(`   ⚠️ [${duration}s] Data is an empty array [].`);
+    } else {
+        console.log(`   ✅ [${duration}s] LOAD COMPLETE. Found ${response.data.length} items.`);
+    }
     
     return response.data;
 
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.error(`   ❌ [${duration}s] FAILED or TIMEOUT.`);
+    console.error(`   ❌ [${duration}s] ERROR: ${error.message}`);
+    if (error.response) {
+        console.error(`   ❌ Server responded with status: ${error.response.status}`);
+        console.error(`   ❌ Server data:`, JSON.stringify(error.response.data).substring(0, 200));
+    }
     return [];
   }
 }
@@ -67,14 +82,12 @@ async function generateM3U() {
     console.log(`\n📂 Category: ${categoryName}`);
     let categoryChannels = [];
 
-    // === STRICT SEQUENTIAL PROCESSING ===
-    // This loop waits for the line above to finish before running the next line.
     for (const url of config.urls) {
-      const data = await fetchUrl(url); // <--- WAITS HERE UNTIL DONE
+      const data = await fetchUrl(url);
       categoryChannels = categoryChannels.concat(data);
     }
 
-    console.log(`\n📊 Finished fetching all links for ${categoryName}. Total: ${categoryChannels.length} channels.`);
+    console.log(`\n📊 Finished ${categoryName}. Total channels: ${categoryChannels.length}.`);
 
     categoryChannels.forEach(channel => {
       if (!channel || !channel.stream_url || !channel.title) return;

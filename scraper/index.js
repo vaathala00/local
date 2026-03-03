@@ -29,52 +29,59 @@ const CATEGORIES = {
 const OUTPUT_FILE = "stream.m3u";
 
 async function fetchUrl(url) {
+  const startTime = Date.now();
   try {
-    console.log(`   -> Requesting: ${url}...`);
+    console.log(`   📡 Waiting for: ${url}...`);
     
-    // Increased timeout to 180000ms (3 minutes) because links are slow
+    // 5 Minute Timeout (300000ms) - Extremely slow links
     const response = await axios.get(url, {
-      timeout: 180000, 
+      timeout: 300000, 
       responseType: 'json'
     });
 
-    // Check if the response is actually an array
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    
     if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ Warning: Response is not an array (Type: ${typeof response.data}). Skipping.`);
+      console.warn(`   ⚠️ [${duration}s] Response not an array. Skipping.`);
       return [];
     }
 
-    console.log(`   ✅ Success: Fetched ${response.data.length} items.`);
+    console.log(`   ✅ [${duration}s] Fetched ${response.data.length} items.`);
     return response.data;
 
   } catch (error) {
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    
     if (error.code === 'ECONNABORTED') {
-      console.error(`   ❌ TIMEOUT: The request took longer than 3 minutes and was cancelled.`);
+      console.error(`   ❌ [${duration}s] TIMEOUT: Link took > 5 mins.`);
     } else if (error.response) {
-      console.error(`   ❌ HTTP Error ${error.response.status}: ${error.response.statusText}`);
+      console.error(`   ❌ [${duration}s] Server Error: ${error.response.status}`);
     } else {
-      console.error(`   ❌ Error: ${error.message}`);
+      console.error(`   ❌ [${duration}s] Error: ${error.message}`);
     }
     return [];
   }
 }
 
 async function generateM3U() {
-  console.log("🚀 Starting M3U Generation...");
+  console.log("🚀 Starting M3U Generation (Sequential Mode)...");
   let m3uContent = "#EXTM3U\n";
 
   for (const [categoryName, config] of Object.entries(CATEGORIES)) {
-    console.log(`\n📡 Processing ${categoryName}: Fetching ${config.urls.length} pages...`);
+    console.log(`\n📂 Category: ${categoryName} (${config.urls.length} pages)`);
 
-    // We keep Promise.all for speed, but now with longer timeouts
-    const promises = config.urls.map(url => fetchUrl(url));
-    const results = await Promise.all(promises);
+    // === CHANGED: Sequential Loop instead of Promise.all ===
+    // We process one URL at a time to avoid overwhelming the slow worker
+    let categoryChannels = [];
+    
+    for (const url of config.urls) {
+      const data = await fetchUrl(url);
+      categoryChannels = categoryChannels.concat(data);
+    }
+    
+    console.log(`📊 Total fetched for ${categoryName}: ${categoryChannels.length} channels.`);
 
-    let allChannels = results.flat();
-    console.log(`✅ Total fetched for ${categoryName}: ${allChannels.length} channels.`);
-
-    allChannels.forEach(channel => {
-      // Basic validation
+    categoryChannels.forEach(channel => {
       if (!channel || !channel.stream_url || !channel.title) return;
 
       const cleanTitle = channel.title.replace(/,/g, " ");

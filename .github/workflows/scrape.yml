@@ -8,8 +8,9 @@ on:
 jobs:
   fetch-json:
     runs-on: ubuntu-latest
-    # Set a timeout just in case a link hangs, though the script handles timeouts
-    timeout-minutes: 15 
+    # Increased timeout to 20 minutes to handle the slow JSON loading
+    timeout-minutes: 20 
+    # ... rest of your steps 
 
     steps:
       - name: Checkout Repo

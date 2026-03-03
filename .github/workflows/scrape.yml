@@ -1,0 +1,58 @@
+name: Fetch and Update Stream JSON
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours (00:00, 06:00, 12:00, 18:00)
+  workflow_dispatch:
+
+jobs:
+  fetch-json:
+    runs-on: ubuntu-latest
+    # Set a timeout just in case a link hangs, though the script handles timeouts
+    timeout-minutes: 15 
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          cd scraper
+          npm install
+
+      - name: Run Fetch Script
+        run: |
+          cd scraper
+          npm start
+
+      - name: Commit and Push stream.m3u
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+
+          git pull --rebase origin main
+
+          # Copy the file from scraper folder to root
+          cp scraper/stream.m3u stream.m3u
+          
+          git add stream.m3u
+          
+          # Check if there are changes to commit
+          if git diff-index --quiet HEAD --; then
+            echo "No changes to commit."
+          else
+            git commit -m "📥 updated stream.m3u from JSON source"
+            git push origin main
+          fi

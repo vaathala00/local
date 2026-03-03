@@ -31,53 +31,51 @@ const OUTPUT_FILE = "stream.m3u";
 async function fetchUrl(url) {
   const startTime = Date.now();
   try {
-    console.log(`⏳ STARTING: ${url}`);
-    
-    // 5 Minute Timeout - Script will wait here until done or 5 mins pass
+    console.log(`\n⏳ LOADING... ${url}`);
+    console.log(`   ⏸️  Script is PAUSED. Waiting up to 2 minutes for this specific link...`);
+
+    // Timeout set to 120,000ms (2 minutes)
     const response = await axios.get(url, {
-      timeout: 300000, 
+      timeout: 120000, 
       responseType: 'json'
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     
     if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ [${duration}s] Skipped (Not an array)`);
+      console.warn(`   ⚠️ [${duration}s] Error: Data is not an array.`);
       return [];
     }
 
-    console.log(`✅ FINISHED: Loaded ${response.data.length} items in ${duration}s`);
+    console.log(`   ✅ [${duration}s] LOAD COMPLETE.`);
+    console.log(`   ➡️  Now moving to the next link...`);
+    
     return response.data;
 
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.error(`❌ FAILED: ${error.message} (after ${duration}s)`);
+    console.error(`   ❌ [${duration}s] FAILED or TIMEOUT.`);
     return [];
   }
 }
 
 async function generateM3U() {
-  console.log("🚀 Script Started (Strict Sequential Mode)");
+  console.log("🚀 STARTING SCRIP");
   let m3uContent = "#EXTM3U\n";
 
-  // Loop through each Category
   for (const [categoryName, config] of Object.entries(CATEGORIES)) {
-    console.log(`\n📂 Processing Category: ${categoryName}`);
+    console.log(`\n📂 Category: ${categoryName}`);
     let categoryChannels = [];
 
-    // ==========================================
-    // STRICT SEQUENTIAL LOOP
-    // ==========================================
-    // The "await" keyword below forces the loop to PAUSE.
-    // It will NOT run the next URL until this one is done.
+    // === STRICT SEQUENTIAL PROCESSING ===
+    // This loop waits for the line above to finish before running the next line.
     for (const url of config.urls) {
-      const data = await fetchUrl(url); // <--- WAITS HERE
+      const data = await fetchUrl(url); // <--- WAITS HERE UNTIL DONE
       categoryChannels = categoryChannels.concat(data);
     }
 
-    console.log(`📊 Completed ${categoryName}: Total ${categoryChannels.length} channels found.`);
+    console.log(`\n📊 Finished fetching all links for ${categoryName}. Total: ${categoryChannels.length} channels.`);
 
-    // Build M3U content
     categoryChannels.forEach(channel => {
       if (!channel || !channel.stream_url || !channel.title) return;
       const cleanTitle = channel.title.replace(/,/g, " ");

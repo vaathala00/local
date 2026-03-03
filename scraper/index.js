@@ -37,7 +37,7 @@ async function fetchUrl(url, retries = 2) {
   try {
     console.log(`\n⏳ Preparing to load... ${url}`);
     console.log(`   🐢 Slowing down... waiting 5 seconds (Human Simulation)`);
-    await sleep(5000); // <--- SLOW DOWN: Wait 5 seconds before fetching
+    await sleep(60000); // <--- SLOW DOWN: Wait 5 seconds before fetching
 
     console.log(`   📡 Sending Request...`);
     

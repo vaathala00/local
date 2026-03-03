@@ -1,10 +1,10 @@
 const axios = require("axios");
 const fs = require("fs");
 
-// Helper function to pause execution (Sleep)
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// === CONFIGURATION ===
+/* ================= CONFIG ================= */
+
 const CATEGORIES = {
   TAMIL: {
     groupTitle: "VT 📺 | Tamil Local Channel",
@@ -30,97 +30,90 @@ const CATEGORIES = {
 };
 
 const OUTPUT_FILE = "stream.m3u";
+const MAX_RETRIES = 2;
+const REQUEST_TIMEOUT = 45000;
 
-async function fetchUrl(url, retries = 2) {
-  const startTime = Date.now();
-  
-  try {
-    console.log(`\n⏳ Preparing to load... ${url}`);
-    console.log(`   🐢 Slowing down... waiting 5 seconds (Human Simulation)`);
-    await sleep(60000); // <--- SLOW DOWN: Wait 5 seconds before fetching
+/* ================= FETCH FUNCTION ================= */
 
-    console.log(`   📡 Sending Request...`);
-    
-    const response = await axios.get(url, {
-      timeout: 120000, // 2 minutes timeout
-      responseType: 'json',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Referer': 'https://tulnit.com/', // Tell them we are coming from their site
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
+async function fetchUrl(url) {
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+    const start = Date.now();
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`   📡 HTTP Status: ${response.status} | Time: ${duration}s`);
+    try {
+      console.log(`⏳ [${attempt}] Fetching: ${url}`);
 
-    if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ Data is NOT an array. Skipping.`);
-      return [];
-    }
+      const response = await axios.get(url, {
+        timeout: REQUEST_TIMEOUT,
+        responseType: "json",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "application/json, text/plain, */*",
+          "Referer": "https://tulnit.com/",
+        },
+      });
 
-    // CHECK FOR EMPTY ARRAY
-    if (response.data.length === 0) {
-      console.warn(`   ⚠️ Received EMPTY ARRAY [].`);
-      
-      if (retries > 0) {
-        console.log(`   🔄 Retrying in 10 seconds... (${retries} attempts left)`);
-        await sleep(10000); // Wait 10 seconds before retry
-        return fetchUrl(url, retries - 1); // RECURSIVE CALL
-      } else {
-        console.error(`   ❌ Max retries reached. Giving up on this link.`);
+      const duration = ((Date.now() - start) / 1000).toFixed(1);
+      console.log(`   ✅ Success (${duration}s)`);
+
+      if (!Array.isArray(response.data)) {
+        console.log("   ⚠️ Invalid format (not array)");
         return [];
       }
+
+      return response.data;
+
+    } catch (err) {
+      console.log(`   ❌ Attempt ${attempt} failed: ${err.message}`);
+
+      if (attempt > MAX_RETRIES) {
+        console.log("   ⛔ Giving up on this URL");
+        return [];
+      }
+
+      await sleep(3000);
     }
-
-    console.log(`   ✅ SUCCESS: Found ${response.data.length} items.`);
-    return response.data;
-
-  } catch (error) {
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.error(`   ❌ ERROR: ${error.message} (after ${duration}s)`);
-    
-    if (retries > 0) {
-        console.log(`   🔄 Retrying in 10 seconds... (${retries} attempts left)`);
-        await sleep(10000);
-        return fetchUrl(url, retries - 1);
-    }
-
-    return [];
   }
 }
 
+/* ================= M3U GENERATOR ================= */
+
 async function generateM3U() {
-  console.log("🚀 STARTING SLOW SCRAPER");
+  console.log("🚀 Starting Fast Scraper\n");
+
   let m3uContent = "#EXTM3U\n";
+  const seenStreams = new Set();
 
   for (const [categoryName, config] of Object.entries(CATEGORIES)) {
     console.log(`\n📂 Category: ${categoryName}`);
-    let categoryChannels = [];
 
-    for (const url of config.urls) {
-      const data = await fetchUrl(url); 
-      categoryChannels = categoryChannels.concat(data);
-      
-      // Extra small pause between links to be nice to the server
-      await sleep(2000); 
-    }
+    // Parallel fetch (FAST)
+    const results = await Promise.all(
+      config.urls.map((url) => fetchUrl(url))
+    );
 
-    console.log(`\n📊 Finished ${categoryName}. Total: ${categoryChannels.length}.`);
+    const categoryChannels = results.flat();
+    console.log(`   📊 Found ${categoryChannels.length} raw items`);
 
-    categoryChannels.forEach(channel => {
-      if (!channel || !channel.stream_url || !channel.title) return;
+    for (const channel of categoryChannels) {
+      if (!channel?.stream_url || !channel?.title) continue;
+
+      // Remove duplicates
+      if (seenStreams.has(channel.stream_url)) continue;
+      seenStreams.add(channel.stream_url);
+
       const cleanTitle = channel.title.replace(/,/g, " ");
       const logo = channel.image || "";
       const tvgName = channel.title;
-      const extInf = `#EXTINF:-1 tvg-name="${tvgName}" tvg-logo="${logo}" group-title="${config.groupTitle}", ${cleanTitle}`;
-      m3uContent += `${extInf}\n${channel.stream_url}\n`;
-    });
+
+      m3uContent += `#EXTINF:-1 tvg-name="${tvgName}" tvg-logo="${logo}" group-title="${config.groupTitle}", ${cleanTitle}\n`;
+      m3uContent += `${channel.stream_url}\n`;
+    }
   }
 
   fs.writeFileSync(OUTPUT_FILE, m3uContent, "utf-8");
-  console.log(`\n✅ Saved ${OUTPUT_FILE}`);
+  console.log(`\n✅ Saved: ${OUTPUT_FILE}`);
 }
+
+/* ================= START ================= */
 
 generateM3U();

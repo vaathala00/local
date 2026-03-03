@@ -31,9 +31,9 @@ const OUTPUT_FILE = "stream.m3u";
 async function fetchUrl(url) {
   const startTime = Date.now();
   try {
-    console.log(`   📡 Waiting for: ${url}...`);
+    console.log(`⏳ STARTING: ${url}`);
     
-    // 5 Minute Timeout (300000ms) - Extremely slow links
+    // 5 Minute Timeout - Script will wait here until done or 5 mins pass
     const response = await axios.get(url, {
       timeout: 300000, 
       responseType: 'json'
@@ -42,59 +42,54 @@ async function fetchUrl(url) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     
     if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ [${duration}s] Response not an array. Skipping.`);
+      console.warn(`   ⚠️ [${duration}s] Skipped (Not an array)`);
       return [];
     }
 
-    console.log(`   ✅ [${duration}s] Fetched ${response.data.length} items.`);
+    console.log(`✅ FINISHED: Loaded ${response.data.length} items in ${duration}s`);
     return response.data;
 
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    
-    if (error.code === 'ECONNABORTED') {
-      console.error(`   ❌ [${duration}s] TIMEOUT: Link took > 5 mins.`);
-    } else if (error.response) {
-      console.error(`   ❌ [${duration}s] Server Error: ${error.response.status}`);
-    } else {
-      console.error(`   ❌ [${duration}s] Error: ${error.message}`);
-    }
+    console.error(`❌ FAILED: ${error.message} (after ${duration}s)`);
     return [];
   }
 }
 
 async function generateM3U() {
-  console.log("🚀 Starting M3U Generation (Sequential Mode)...");
+  console.log("🚀 Script Started (Strict Sequential Mode)");
   let m3uContent = "#EXTM3U\n";
 
+  // Loop through each Category
   for (const [categoryName, config] of Object.entries(CATEGORIES)) {
-    console.log(`\n📂 Category: ${categoryName} (${config.urls.length} pages)`);
-
-    // === CHANGED: Sequential Loop instead of Promise.all ===
-    // We process one URL at a time to avoid overwhelming the slow worker
+    console.log(`\n📂 Processing Category: ${categoryName}`);
     let categoryChannels = [];
-    
+
+    // ==========================================
+    // STRICT SEQUENTIAL LOOP
+    // ==========================================
+    // The "await" keyword below forces the loop to PAUSE.
+    // It will NOT run the next URL until this one is done.
     for (const url of config.urls) {
-      const data = await fetchUrl(url);
+      const data = await fetchUrl(url); // <--- WAITS HERE
       categoryChannels = categoryChannels.concat(data);
     }
-    
-    console.log(`📊 Total fetched for ${categoryName}: ${categoryChannels.length} channels.`);
 
+    console.log(`📊 Completed ${categoryName}: Total ${categoryChannels.length} channels found.`);
+
+    // Build M3U content
     categoryChannels.forEach(channel => {
       if (!channel || !channel.stream_url || !channel.title) return;
-
       const cleanTitle = channel.title.replace(/,/g, " ");
       const logo = channel.image || "";
       const tvgName = channel.title;
-
       const extInf = `#EXTINF:-1 tvg-name="${tvgName}" tvg-logo="${logo}" group-title="${config.groupTitle}", ${cleanTitle}`;
       m3uContent += `${extInf}\n${channel.stream_url}\n`;
     });
   }
 
   fs.writeFileSync(OUTPUT_FILE, m3uContent, "utf-8");
-  console.log(`\n✅ Successfully saved ${OUTPUT_FILE}`);
+  console.log(`\n✅ Saved ${OUTPUT_FILE}`);
 }
 
 generateM3U();

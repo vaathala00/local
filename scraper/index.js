@@ -36,42 +36,46 @@ const REQUEST_TIMEOUT = 45000;
 /* ================= FETCH FUNCTION ================= */
 
 async function fetchUrl(url) {
-  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+  try {
     const start = Date.now();
 
-    try {
-      console.log(`⏳ [${attempt}] Fetching: ${url}`);
+    const response = await axios.get(url, {
+      timeout: 60000,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept":
+          "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://tulnit.com/",
+        "Connection": "keep-alive",
+      },
+      validateStatus: () => true,
+    });
 
-      const response = await axios.get(url, {
-        timeout: REQUEST_TIMEOUT,
-        responseType: "json",
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "application/json, text/plain, */*",
-          "Referer": "https://tulnit.com/",
-        },
-      });
+    const duration = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`   Status: ${response.status} (${duration}s)`);
 
-      const duration = ((Date.now() - start) / 1000).toFixed(1);
-      console.log(`   ✅ Success (${duration}s)`);
+    // 👇 IMPORTANT DEBUG
+    console.log("   Content-Type:", response.headers["content-type"]);
 
-      if (!Array.isArray(response.data)) {
-        console.log("   ⚠️ Invalid format (not array)");
-        return [];
-      }
-
-      return response.data;
-
-    } catch (err) {
-      console.log(`   ❌ Attempt ${attempt} failed: ${err.message}`);
-
-      if (attempt > MAX_RETRIES) {
-        console.log("   ⛔ Giving up on this URL");
-        return [];
-      }
-
-      await sleep(3000);
+    if (typeof response.data === "string") {
+      console.log("   ⚠️ Got STRING instead of JSON");
+      console.log(response.data.slice(0, 200));
+      return [];
     }
+
+    if (!Array.isArray(response.data)) {
+      console.log("   ⚠️ Not an array");
+      return [];
+    }
+
+    console.log(`   ✅ Items: ${response.data.length}`);
+    return response.data;
+
+  } catch (err) {
+    console.log("   ❌ Error:", err.message);
+    return [];
   }
 }
 

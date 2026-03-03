@@ -1,6 +1,9 @@
 const axios = require("axios");
 const fs = require("fs");
 
+// Helper function to pause execution (Sleep)
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // === CONFIGURATION ===
 const CATEGORIES = {
   TAMIL: {
@@ -28,54 +31,68 @@ const CATEGORIES = {
 
 const OUTPUT_FILE = "stream.m3u";
 
-async function fetchUrl(url) {
+async function fetchUrl(url, retries = 2) {
   const startTime = Date.now();
+  
   try {
-    console.log(`\n⏳ LOADING... ${url}`);
+    console.log(`\n⏳ Preparing to load... ${url}`);
+    console.log(`   🐢 Slowing down... waiting 5 seconds (Human Simulation)`);
+    await sleep(5000); // <--- SLOW DOWN: Wait 5 seconds before fetching
+
+    console.log(`   📡 Sending Request...`);
     
-    // Added User-Agent to look like a real browser
     const response = await axios.get(url, {
-      timeout: 120000, 
+      timeout: 120000, // 2 minutes timeout
       responseType: 'json',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://tulnit.com/', // Tell them we are coming from their site
+        'Accept-Language': 'en-US,en;q=0.9'
       }
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`   📡 HTTP Status: ${response.status} | Time: ${duration}s`);
 
-    // === DEBUG LOGS ===
-    console.log(`   📡 HTTP Status Code: ${response.status}`);
-    console.log(`   🧪 First 300 chars of response:`, JSON.stringify(response.data).substring(0, 300));
-    // ==================
-    
     if (!Array.isArray(response.data)) {
-      console.warn(`   ⚠️ [${duration}s] Data is NOT an array. It might be an HTML error page.`);
+      console.warn(`   ⚠️ Data is NOT an array. Skipping.`);
       return [];
     }
 
+    // CHECK FOR EMPTY ARRAY
     if (response.data.length === 0) {
-        console.warn(`   ⚠️ [${duration}s] Data is an empty array [].`);
-    } else {
-        console.log(`   ✅ [${duration}s] LOAD COMPLETE. Found ${response.data.length} items.`);
+      console.warn(`   ⚠️ Received EMPTY ARRAY [].`);
+      
+      if (retries > 0) {
+        console.log(`   🔄 Retrying in 10 seconds... (${retries} attempts left)`);
+        await sleep(10000); // Wait 10 seconds before retry
+        return fetchUrl(url, retries - 1); // RECURSIVE CALL
+      } else {
+        console.error(`   ❌ Max retries reached. Giving up on this link.`);
+        return [];
+      }
     }
-    
+
+    console.log(`   ✅ SUCCESS: Found ${response.data.length} items.`);
     return response.data;
 
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.error(`   ❌ [${duration}s] ERROR: ${error.message}`);
-    if (error.response) {
-        console.error(`   ❌ Server responded with status: ${error.response.status}`);
-        console.error(`   ❌ Server data:`, JSON.stringify(error.response.data).substring(0, 200));
+    console.error(`   ❌ ERROR: ${error.message} (after ${duration}s)`);
+    
+    if (retries > 0) {
+        console.log(`   🔄 Retrying in 10 seconds... (${retries} attempts left)`);
+        await sleep(10000);
+        return fetchUrl(url, retries - 1);
     }
+
     return [];
   }
 }
 
 async function generateM3U() {
-  console.log("🚀 STARTING SCRIP");
+  console.log("🚀 STARTING SLOW SCRAPER");
   let m3uContent = "#EXTM3U\n";
 
   for (const [categoryName, config] of Object.entries(CATEGORIES)) {
@@ -83,11 +100,14 @@ async function generateM3U() {
     let categoryChannels = [];
 
     for (const url of config.urls) {
-      const data = await fetchUrl(url);
+      const data = await fetchUrl(url); 
       categoryChannels = categoryChannels.concat(data);
+      
+      // Extra small pause between links to be nice to the server
+      await sleep(2000); 
     }
 
-    console.log(`\n📊 Finished ${categoryName}. Total channels: ${categoryChannels.length}.`);
+    console.log(`\n📊 Finished ${categoryName}. Total: ${categoryChannels.length}.`);
 
     categoryChannels.forEach(channel => {
       if (!channel || !channel.stream_url || !channel.title) return;
